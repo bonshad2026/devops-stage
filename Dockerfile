@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM docker-mirror.liara.ir/library/node:22-bookworm-slim
 
 WORKDIR /stage
 COPY launcher.mjs ./
