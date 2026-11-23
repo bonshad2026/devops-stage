@@ -54,10 +54,9 @@ function start(app) {
 async function isUp(url) {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    await res.body?.cancel();
-    return { up: res.ok, status: res.status };
-  } catch (error) {
-    return { up: false, error: error.cause?.code || error.name };
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -76,8 +75,7 @@ if (process.argv[2] === 'health') {
     results = await Promise.all(
       apps.map(async (app) => ({
         app: app.name,
-        url: `http://127.0.0.1:${app.port}${app.health || '/'}`,
-        ...await isUp(`http://127.0.0.1:${app.port}${app.health || '/'}`),
+        up: await isUp(`http://127.0.0.1:${app.port}${app.health || '/'}`),
       })),
     );
     if (results.every((r) => r.up)) break;
@@ -88,19 +86,6 @@ if (process.argv[2] === 'health') {
 }
 
 for (const app of apps) start(app);
-
-// Failed Liara releases may not expose a console. Record the same internal
-// check once in runtime logs, without printing environment values or bodies.
-setTimeout(() => {
-  const check = spawn(process.execPath, [fileURLToPath(import.meta.url), 'health'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  check.stdout.on('data', chunk => process.stdout.write('[startup health] ' + chunk));
-  check.stderr.on('data', chunk => process.stderr.write('[startup health] ' + chunk));
-  check.on('error', error => console.error('[startup health] could not run:', error.code));
-  check.on('exit', (code, signal) => console.log('[startup health] exit ' + (code ?? signal)));
-}, 4000);
-
 
 http
   .createServer((req, res) => {
