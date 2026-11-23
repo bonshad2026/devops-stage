@@ -1,0 +1,72 @@
+# Deploys one app to Liara. One workflow for every app in this repo.
+#
+# Triggered by the app's own release workflow (repository_dispatch, event
+# `app-release`, payload {app, version}) or manually with app + version.
+#
+# Adding an app = add apps/<name>/ with:
+#   app.json     source_repo + artifact glob in that repo's release
+#   Dockerfile   how to package that artifact
+#   liara.json   Liara app name, port, disks, health check
+
+name: deploy
+
+on:
+  repository_dispatch:
+    types: [app-release]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App folder under apps/, e.g. content-creator
+        required: true
+      version:
+        description: Release version to deploy, e.g. 0.1.4
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Resolve app and version
+        id: cfg
+        run: |
+          set -euo pipefail
+          APP="${{ inputs.app || github.event.client_payload.app }}"
+          VER="${{ inputs.version || github.event.client_payload.version }}"
+          [ -n "$APP" ] || { echo "::error::no app given"; exit 1; }
+          [ -d "apps/$APP" ] || { echo "::error::apps/$APP does not exist"; exit 1; }
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "deploying $APP $VER"
+
+      - name: Download and extract the build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP: ${{ steps.cfg.outputs.app }}
+          VERSION: ${{ steps.cfg.outputs.version }}
+        run: |
+          set -euo pipefail
+          REPO=$(jq -r .source_repo "apps/$APP/app.json")
+          PATTERN=$(jq -r .artifact "apps/$APP/app.json")
+          gh release download "v$VERSION" --repo "$REPO" --dir art --pattern "$PATTERN"
+          mkdir -p deploy
+          tar -xzf art/*.tar.gz -C deploy
+          cp "apps/$APP/Dockerfile" "apps/$APP/liara.json" deploy/
+          du -sh deploy
+
+      - name: Deploy to Liara
+        env:
+          LIARA_API_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
+          APP: ${{ steps.cfg.outputs.app }}
+        run: |
+          set -euo pipefail
+          npm i -g @liara/cli@9
+          LIARA_APP=$(jq -r .app "apps/$APP/liara.json")
+          PORT=$(jq -r .port "apps/$APP/liara.json")
+          liara deploy --app "$LIARA_APP" --path deploy --platform docker \
+            --port "$PORT" --no-app-logs --api-token "$LIARA_API_TOKEN"
