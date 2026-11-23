@@ -7,10 +7,10 @@
     { "name": "creator", "mountTo": "/data/creator" }
   ],
   "healthCheck": {
-    "command": "CMD node /stage/launcher.mjs health",
-    "interval": 30, 
-    "timeout": 15,
-    "retries": 2,
-    "startPeriod": 5
+    "command": "CMD curl --fail http://localhost:8080 || exit 1",
+    "interval": 30000,
+    "timeout": 8000,
+    "retries": 3,
+    "startPeriod": 3000
   }
 }
