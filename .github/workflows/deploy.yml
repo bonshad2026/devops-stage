@@ -1,30 +1,11 @@
-# Builds and deploys the single bstage image, which hosts every app in apps/.
-#
-# One deploy rebuilds the whole image from the versions pinned in
-# deploy.lock.json, so it restarts every app. That is accepted for staging.
-#
-# Triggered by an app's release workflow (repository_dispatch, event
-# `app-release`, payload {app, version}) or manually with app + version.
-#
-# Adding an app: apps/<name>/app.json with source_repo, artifact, route, port,
-# data_dir, disk, entry, health — plus its disk in liara.json.
-
+# Static bstage deployment. Child application deployment is temporarily disabled.
 name: deploy
 
 on:
-  repository_dispatch:
-    types: [app-release]
   workflow_dispatch:
-    inputs:
-      app:
-        description: App folder under apps/, e.g. content-creator
-        required: true
-      version:
-        description: Release version to deploy, e.g. 0.1.5
-        required: true
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: bstage-deploy
@@ -37,67 +18,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 0
 
-      - name: Pin the version
-        env:
-          APP: ${{ inputs.app || github.event.client_payload.app }}
-          VER: ${{ inputs.version || github.event.client_payload.version }}
+      - name: Stage static site
         run: |
-          set -euo pipefail
-          [[ "$APP" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 1
-          [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || exit 1
-          [ -d "apps/$APP" ] || { echo "::error::apps/$APP does not exist"; exit 1; }
-          jq --arg app "$APP" --arg ver "$VER" '.[$app] = $ver' deploy.lock.json > lock.tmp
-          mv lock.tmp deploy.lock.json
-          echo "--- deploy.lock.json ---"
-          cat deploy.lock.json
+          mkdir -p stage
+          cp Dockerfile index.html liara.json stage/
 
-      - name: Stage every app at its pinned version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p stage/apps
-          jq -r 'to_entries[] | "\(.key) \(.value)"' deploy.lock.json |
-          while read -r app ver; do
-            cfg="apps/$app/app.json"
-            repo=$(jq -r .source_repo "$cfg")
-            pattern=$(jq -r .artifact "$cfg")
-            echo "staging $app $ver from $repo"
-            mkdir -p "stage/apps/$app/app"
-            gh release download "v$ver" --repo "$repo" --dir "/tmp/art-$app" --pattern "$pattern"
-            (cd "/tmp/art-$app" && sha256sum -c *.sha256)
-            tar -xzf "/tmp/art-$app/"*.tar.gz -C "stage/apps/$app/app"
-            test -f "stage/apps/$app/app/node_modules/express/package.json"
-            (cd "stage/apps/$app/app" && tar -czf production-deps.tar.gz node_modules && rm -rf node_modules)
-            cp "$cfg" "stage/apps/$app/app.json"
-          done
-          cp launcher.mjs index.html liara.json Dockerfile stage/
-          ls stage
-          du -sh stage
-
-      - name: Commit desired versions
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add deploy.lock.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: pin staging versions [skip ci]"
-            git push origin HEAD:main
-          fi
-
-      - name: Deploy to Liara
+      - name: Deploy static site to Liara
         env:
           LIARA_API_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
         run: |
-          set -euo pipefail
-          node scripts/configure-env.mjs
           npm i -g @liara/cli@9
           liara deploy --app bstage --path stage --platform docker \
-            --port 8080 --no-app-logs --api-token "$LIARA_API_TOKEN"
-
-      - name: Record what went out
-        run: |
-          echo "deployed bstage with:"
-          cat deploy.lock.json
+            --port 80 --no-app-logs --api-token "$LIARA_API_TOKEN"

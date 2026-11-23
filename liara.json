@@ -1,7 +1,7 @@
 {
   "app": "bstage",
   "platform": "docker",
-  "port": 8080,
+  "port": 80,
   "build": {
     "location": "iran"
   },
@@ -10,12 +10,5 @@
       "name": "creator",
       "mountTo": "/data/creator"
     }
-  ],
-  "healthCheck": {
-    "command": "CMD node /stage/launcher.mjs health",
-    "interval": 30000,
-    "timeout": 8000,
-    "retries": 3,
-    "startPeriod": 3000
-  }
+  ]
 }
