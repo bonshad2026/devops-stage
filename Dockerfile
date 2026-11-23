@@ -12,4 +12,5 @@ RUN find /stage/apps -type f -name ffmpeg -exec chmod +x {} +
 
 ENV NODE_ENV=production
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=8s --start-period=60s --retries=3 CMD ["node","launcher.mjs","health"]
 CMD ["node", "launcher.mjs"]
