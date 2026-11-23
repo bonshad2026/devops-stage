@@ -149,6 +149,6 @@ http
     });
     req.pipe(upstream);
   })
-  .listen(PORT, () => {
+  .listen(PORT, "0.0.0.0", () => {
     console.log(`gateway on ${PORT}: ` + apps.map((a) => `${a.route || '/'} -> ${a.name}:${a.port}`).join(', '));
   });
