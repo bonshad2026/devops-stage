@@ -11,6 +11,6 @@
     "interval": 30000,
     "timeout": 8000,
     "retries": 3,
-    "startPeriod": 15000
+    "startPeriod": 3000
   }
 }

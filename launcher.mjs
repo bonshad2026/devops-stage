@@ -64,12 +64,20 @@ if (!apps.length) {
 }
 
 if (process.argv[2] === 'health') {
-  const results = await Promise.all(
-    apps.map(async (app) => ({
-      app: app.name,
-      up: await isUp(`http://127.0.0.1:${app.port}${app.health || '/'}`),
-    })),
-  );
+  // Liara caps startPeriod at 3000ms, so give slow children a short grace window
+  // here instead: poll until everything answers, or until the check's timeout.
+  const deadline = Date.now() + 6000;
+  let results = [];
+  do {
+    results = await Promise.all(
+      apps.map(async (app) => ({
+        app: app.name,
+        up: await isUp(`http://127.0.0.1:${app.port}${app.health || '/'}`),
+      })),
+    );
+    if (results.every((r) => r.up)) break;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  } while (Date.now() < deadline);
   console.log(JSON.stringify(results));
   process.exit(results.every((r) => r.up) ? 0 : 1);
 }
