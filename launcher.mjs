@@ -103,7 +103,7 @@ http
       {
         host: '127.0.0.1',
         port: app.port,
-        path: (url.pathname.slice(app.route.length) || '/') + url.search,
+        path: app.strip_prefix === false ? url.pathname + url.search : (url.pathname.slice(app.route.length) || '/') + url.search,
         method: req.method,
         headers: req.headers,
       },

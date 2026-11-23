@@ -6,7 +6,7 @@
   "data_dir": "/data/creator",
   "disk": "creator",
   "entry": "server.js",
-  "health": "/api/health",
+  "health": "/creator/api/health",
   "env_prefix": "CONTENT_CREATOR__",
   "env_allowlist": [
     "GAPGPT_API_KEY",
@@ -24,5 +24,6 @@
     "MAX_PARALLEL",
     "FFMPEG_PATH",
     "PRODUCT_TEMPLATE_SAMPLE_URL"
-  ]
+  ],
+  "strip_prefix": false
 }
