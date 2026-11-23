@@ -2,12 +2,17 @@
   "app": "bstage",
   "platform": "docker",
   "port": 8080,
-  "build": { "location": "iran" },
+  "build": {
+    "location": "iran"
+  },
   "disks": [
-    { "name": "creator", "mountTo": "/data/creator" }
+    {
+      "name": "creator",
+      "mountTo": "/data/creator"
+    }
   ],
   "healthCheck": {
-    "command": "CMD curl --fail http://localhost:8080 || exit 1",
+    "command": "CMD node /stage/launcher.mjs health",
     "interval": 30000,
     "timeout": 8000,
     "retries": 3,
