@@ -1,4 +1,4 @@
-# Static bstage deployment. Child application deployment is temporarily disabled.
+# Nginx serves the dashboard and proxies apps pinned in deploy.lock.json.
 name: deploy
 
 on:
@@ -19,15 +19,35 @@ jobs:
         with:
           ref: main
 
-      - name: Stage static site
+      - name: Stage every app at its pinned version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p stage
-          cp Dockerfile index.html liara.json stage/
+          set -euo pipefail
+          mkdir -p stage/apps
+          jq -r 'to_entries[] | "\(.key) \(.value)"' deploy.lock.json |
+          while read -r app ver; do
+            cfg="apps/$app/app.json"
+            repo=$(jq -r .source_repo "$cfg")
+            pattern=$(jq -r .artifact "$cfg")
+            echo "staging $app $ver from $repo"
+            mkdir -p "stage/apps/$app/app"
+            gh release download "v$ver" --repo "$repo" --dir "/tmp/art-$app" --pattern "$pattern"
+            (cd "/tmp/art-$app" && sha256sum -c *.sha256)
+            tar -xzf "/tmp/art-$app/"*.tar.gz -C "stage/apps/$app/app"
+            (cd "stage/apps/$app/app" && tar -czf production-deps.tar.gz node_modules && rm -rf node_modules)
+            cp "$cfg" "stage/apps/$app/app.json"
+          done
+          cp launcher.mjs index.html liara.json Dockerfile stage/
+          ls stage
+          du -sh stage
 
-      - name: Deploy static site to Liara
+      - name: Deploy to Liara
         env:
           LIARA_API_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
         run: |
+          set -euo pipefail
+          node scripts/configure-env.mjs
           npm i -g @liara/cli@9
           liara deploy --app bstage --path stage --platform docker \
             --port 80 --no-app-logs --api-token "$LIARA_API_TOKEN"
