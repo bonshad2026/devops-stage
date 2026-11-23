@@ -23,17 +23,30 @@ on:
         description: Release version to deploy, e.g. 0.1.5
         required: true
 
+permissions:
+  contents: write
+
+concurrency:
+  group: bstage-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Pin the version
+        env:
+          APP: ${{ inputs.app || github.event.client_payload.app }}
+          VER: ${{ inputs.version || github.event.client_payload.version }}
         run: |
           set -euo pipefail
-          APP="${{ inputs.app || github.event.client_payload.app }}"
-          VER="${{ inputs.version || github.event.client_payload.version }}"
+          [[ "$APP" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 1
+          [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || exit 1
           [ -d "apps/$APP" ] || { echo "::error::apps/$APP does not exist"; exit 1; }
           jq --arg app "$APP" --arg ver "$VER" '.[$app] = $ver' deploy.lock.json > lock.tmp
           mv lock.tmp deploy.lock.json
@@ -54,18 +67,44 @@ jobs:
             echo "staging $app $ver from $repo"
             mkdir -p "stage/apps/$app/app"
             gh release download "v$ver" --repo "$repo" --dir "/tmp/art-$app" --pattern "$pattern"
+            (cd "/tmp/art-$app" && sha256sum -c *.sha256)
             tar -xzf "/tmp/art-$app/"*.tar.gz -C "stage/apps/$app/app"
+            test -f "stage/apps/$app/app/node_modules/express/package.json"
+            (cd "stage/apps/$app/app" && tar -czf production-deps.tar.gz node_modules && rm -rf node_modules)
             cp "$cfg" "stage/apps/$app/app.json"
           done
           cp launcher.mjs liara.json Dockerfile stage/
           ls stage
           du -sh stage
 
+      - name: Verify packaged Docker runtime
+        run: |
+          set -euo pipefail
+          docker build -t bstage-check stage
+          docker run -d --name bstage-check --env CONTENT_CREATOR__AI_DRYRUN=1 bstage-check
+          trap 'docker logs bstage-check; docker rm -f bstage-check' EXIT
+          for attempt in {1..10}; do
+            if docker exec bstage-check node /stage/launcher.mjs health; then exit 0; fi
+            sleep 3
+          done
+          exit 1
+
+      - name: Commit desired versions
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy.lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: pin staging versions [skip ci]"
+            git push origin HEAD:main
+          fi
+
       - name: Deploy to Liara
         env:
           LIARA_API_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
         run: |
           set -euo pipefail
+          node scripts/configure-env.mjs
           npm i -g @liara/cli@9
           liara deploy --app bstage --path stage --platform docker \
             --port 8080 --no-app-logs --api-token "$LIARA_API_TOKEN"

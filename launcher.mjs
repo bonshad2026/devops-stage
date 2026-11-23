@@ -33,7 +33,10 @@ function start(app) {
   const child = spawn(process.execPath, [app.entry || 'server.js'], {
     cwd: app.dir,
     env: {
-      ...process.env,
+      PATH: process.env.PATH,
+      HOME: app.data_dir,
+      TMPDIR: '/tmp',
+      ...Object.fromEntries((app.env_allowlist || []).filter(key => process.env[(app.env_prefix || '') + key] !== undefined).map(key => [key, process.env[(app.env_prefix || '') + key]])),
       PORT: String(app.port),
       BASE_URL: app.route,
       DATA_DIR: app.data_dir,

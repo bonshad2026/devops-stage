@@ -6,5 +6,23 @@
   "data_dir": "/data/creator",
   "disk": "creator",
   "entry": "server.js",
-  "health": "/api/health"
+  "health": "/api/health",
+  "env_prefix": "CONTENT_CREATOR__",
+  "env_allowlist": [
+    "GAPGPT_API_KEY",
+    "GAPGPT_BASE_URL",
+    "GAPGPT_IMAGE_MODEL",
+    "AI_MODEL",
+    "AI_DRYRUN",
+    "KAVENEGAR_API_KEY",
+    "KAVENEGAR_TEMPLATE",
+    "ADMIN_PHONE",
+    "APP_EDITION",
+    "MAX_UPLOAD_MB",
+    "RAW_RETENTION_DAYS",
+    "TRACE_RETENTION_DAYS",
+    "MAX_PARALLEL",
+    "FFMPEG_PATH",
+    "PRODUCT_TEMPLATE_SAMPLE_URL"
+  ]
 }

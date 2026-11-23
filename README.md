@@ -35,3 +35,9 @@ The image only contains what the lock file pins — a new app needs one entry in
 
 - automatic: `repository_dispatch`, event `app-release`, payload `{app, version}`
 - manual: Actions → deploy → Run workflow → app + version
+
+## Deployment fixes
+
+Dependencies are re-archived as production-deps.tar.gz before Liara upload because its CLI excludes node_modules. Docker extracts them and checks express resolution. Deployments are serialized; the desired version lock is committed before deployment. A failed deployment remains failed even if the desired lock was committed. App env uses per-app prefixes and explicit allowlists; configure-env.mjs copies existing unprefixed app settings to their prefix without overwriting prefixed values. Original container values remain available only to the supervisor.
+
+Validation is scoped to the change: packaging/startup and one live health check for deployment fixes, no repeated full app suites or paid AI development calls.
