@@ -4,25 +4,10 @@ on:
   repository_dispatch:
     types: [content-creator-release]
   workflow_dispatch:
-    inputs:
-      version:
-        description: Version to fetch, e.g. 0.1.4
-        required: true
-
-env:
-  SOURCE_REPO: bonshad2026/content-creator
 
 jobs:
-  fetch:
+  hello:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Download and extract
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          V="${{ inputs.version || github.event.client_payload.version }}"
-          gh release download "v$V" --repo "$SOURCE_REPO" --dir art --pattern "content-creator-*"
-          mkdir -p build
-          tar -xzf art/*.tar.gz -C build
+      - name: Say hello
+        run: echo "hello — version ${{ github.event.client_payload.version || 'manual' }}"
