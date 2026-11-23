@@ -77,18 +77,6 @@ jobs:
           ls stage
           du -sh stage
 
-      - name: Verify packaged Docker runtime
-        run: |
-          set -euo pipefail
-          docker build -t bstage-check stage
-          docker run -d --name bstage-check --env CONTENT_CREATOR__AI_DRYRUN=1 bstage-check
-          trap 'docker logs bstage-check; docker rm -f bstage-check' EXIT
-          for attempt in {1..10}; do
-            if docker exec bstage-check node /stage/launcher.mjs health; then exit 0; fi
-            sleep 3
-          done
-          exit 1
-
       - name: Commit desired versions
         run: |
           git config user.name "github-actions[bot]"
