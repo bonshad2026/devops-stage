@@ -97,12 +97,28 @@ http
         headers: req.headers,
       },
       (answer) => {
-        res.writeHead(answer.statusCode, answer.headers);
+        const headers = { ...answer.headers };
+        const streaming = String(headers['content-type'] || '').includes('text/event-stream');
+        if (streaming) {
+          // SSE: never let a proxy buffer or cache the stream
+          headers['cache-control'] = headers['cache-control'] || 'no-cache';
+          headers['x-accel-buffering'] = 'no';
+          headers.connection = 'keep-alive';
+        }
+        res.writeHead(answer.statusCode, headers);
+        res.flushHeaders?.();
         answer.pipe(res);
       },
     );
 
-    upstream.on('error', () => res.writeHead(502, { 'content-type': 'text/plain' }).end('upstream down'));
+    upstream.setNoDelay(true);
+    req.socket.setNoDelay(true);
+    // a client that walks away must not leave the upstream connection open
+    req.on('aborted', () => upstream.destroy());
+    upstream.on('error', () => {
+      if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' });
+      res.end('upstream down');
+    });
     req.pipe(upstream);
   })
   .listen(PORT, () => {
