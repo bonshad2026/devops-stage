@@ -1,7 +1,7 @@
 FROM docker-mirror.liara.ir/library/node:22-bookworm-slim
 
 WORKDIR /stage
-COPY launcher.mjs ./
+COPY launcher.mjs index.html ./
 COPY apps ./apps
 
 # Liara excludes node_modules during upload; dependencies travel as an archive.

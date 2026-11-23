@@ -73,7 +73,7 @@ jobs:
             (cd "stage/apps/$app/app" && tar -czf production-deps.tar.gz node_modules && rm -rf node_modules)
             cp "$cfg" "stage/apps/$app/app.json"
           done
-          cp launcher.mjs liara.json Dockerfile stage/
+          cp launcher.mjs index.html liara.json Dockerfile stage/
           ls stage
           du -sh stage
 

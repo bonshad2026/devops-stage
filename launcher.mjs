@@ -85,11 +85,28 @@ if (process.argv[2] === 'health') {
   process.exit(results.every((r) => r.up) ? 0 : 1);
 }
 
+const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const dashboardTemplate = await readFile(join(ROOT, 'index.html'), 'utf8');
+const dashboard = dashboardTemplate.replace('<!-- APP_LINKS -->', apps.map(app => {
+  const route = app.route.replace(/\/+$/, '') + '/';
+  const label = app.title || app.name.replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+  return '<a class="card" href="' + escapeHtml(route) + '"><h2>' + escapeHtml(label) + '</h2><code>' + escapeHtml(route) + '</code><span class="open">Open application</span></a>';
+}).join('\n'));
+
 for (const app of apps) start(app);
 
 http
   .createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405, { allow: 'GET, HEAD' }).end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(req.method === 'HEAD' ? undefined : dashboard);
+      return;
+    }
     const app = apps
       .filter((a) => url.pathname === a.route || url.pathname.startsWith(`${a.route}/`))
       .sort((a, b) => b.route.length - a.route.length)[0];
