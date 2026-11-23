@@ -57,7 +57,8 @@ jobs:
             tar -xzf "/tmp/art-$app/"*.tar.gz -C "stage/apps/$app/app"
             cp "$cfg" "stage/apps/$app/app.json"
           done
-          cp launcher.mjs liara.json stage/
+          cp launcher.mjs liara.json Dockerfile stage/
+          ls stage
           du -sh stage
 
       - name: Deploy to Liara
