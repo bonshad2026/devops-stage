@@ -1,12 +1,13 @@
-# Deploys one app to Liara. One workflow for every app in this repo.
+# Builds and deploys the single bstage image, which hosts every app in apps/.
 #
-# Triggered by the app's own release workflow (repository_dispatch, event
+# One deploy rebuilds the whole image from the versions pinned in
+# deploy.lock.json, so it restarts every app. That is accepted for staging.
+#
+# Triggered by an app's release workflow (repository_dispatch, event
 # `app-release`, payload {app, version}) or manually with app + version.
 #
-# Adding an app = add apps/<name>/ with:
-#   app.json     source_repo + artifact glob in that repo's release
-#   Dockerfile   how to package that artifact
-#   liara.json   Liara app name, port, disks, health check
+# Adding an app: apps/<name>/app.json with source_repo, artifact, route, port,
+# data_dir, disk, entry, health — plus its disk in liara.json.
 
 name: deploy
 
@@ -19,7 +20,7 @@ on:
         description: App folder under apps/, e.g. content-creator
         required: true
       version:
-        description: Release version to deploy, e.g. 0.1.4
+        description: Release version to deploy, e.g. 0.1.5
         required: true
 
 jobs:
@@ -28,45 +29,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Resolve app and version
-        id: cfg
+      - name: Pin the version
         run: |
           set -euo pipefail
           APP="${{ inputs.app || github.event.client_payload.app }}"
           VER="${{ inputs.version || github.event.client_payload.version }}"
-          [ -n "$APP" ] || { echo "::error::no app given"; exit 1; }
           [ -d "apps/$APP" ] || { echo "::error::apps/$APP does not exist"; exit 1; }
-          echo "app=$APP" >> "$GITHUB_OUTPUT"
-          echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "deploying $APP $VER"
+          jq --arg app "$APP" --arg ver "$VER" '.[$app] = $ver' deploy.lock.json > lock.tmp
+          mv lock.tmp deploy.lock.json
+          echo "--- deploy.lock.json ---"
+          cat deploy.lock.json
 
-      - name: Download and extract the build
+      - name: Stage every app at its pinned version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP: ${{ steps.cfg.outputs.app }}
-          VERSION: ${{ steps.cfg.outputs.version }}
         run: |
           set -euo pipefail
-          REPO=$(jq -r .source_repo "apps/$APP/app.json")
-          PATTERN=$(jq -r .artifact "apps/$APP/app.json")
-          gh release download "v$VERSION" --repo "$REPO" --dir art --pattern "$PATTERN"
-          mkdir -p deploy
-          tar -xzf art/*.tar.gz -C deploy
-          cp "apps/$APP/Dockerfile" "apps/$APP/liara.json" deploy/
-          du -sh deploy
+          mkdir -p stage/apps
+          jq -r 'to_entries[] | "\(.key) \(.value)"' deploy.lock.json |
+          while read -r app ver; do
+            cfg="apps/$app/app.json"
+            repo=$(jq -r .source_repo "$cfg")
+            pattern=$(jq -r .artifact "$cfg")
+            echo "staging $app $ver from $repo"
+            mkdir -p "stage/apps/$app/app"
+            gh release download "v$ver" --repo "$repo" --dir "/tmp/art-$app" --pattern "$pattern"
+            tar -xzf "/tmp/art-$app/"*.tar.gz -C "stage/apps/$app/app"
+            cp "$cfg" "stage/apps/$app/app.json"
+          done
+          cp launcher.mjs liara.json stage/
+          du -sh stage
 
       - name: Deploy to Liara
         env:
           LIARA_API_TOKEN: ${{ secrets.LIARA_API_TOKEN }}
-          APP: ${{ steps.cfg.outputs.app }}
         run: |
           set -euo pipefail
           npm i -g @liara/cli@9
-          LIARA_APP=$(jq -r .app "apps/$APP/liara.json")
-          PORT=$(jq -r .port "apps/$APP/liara.json")
-          liara deploy --app "$LIARA_APP" --path deploy --platform docker \
-            --port "$PORT" --no-app-logs --api-token "$LIARA_API_TOKEN"
+          liara deploy --app bstage --path stage --platform docker \
+            --port 8080 --no-app-logs --api-token "$LIARA_API_TOKEN"
+
+      - name: Record what went out
+        run: |
+          echo "deployed bstage with:"
+          cat deploy.lock.json

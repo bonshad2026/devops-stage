@@ -1,32 +1,37 @@
-# devops-stage
+# bstage
 
-Deployment pipeline for **content-creator** only. Nothing else belongs in this repo.
+One Liara app that hosts several apps behind path prefixes. Deploy pipeline for
+content-creator today, more apps later.
 
-## What it does
+## Shape
 
-`.github/workflows/content-creator.yml` reacts to a release published in
-`bonshad2026/content-creator`:
+- `launcher.mjs` — gateway on 8080 plus a supervisor. Each `apps/<name>/` with an
+  `app.json` becomes a child process on its own port with its own `BASE_URL`,
+  `DATA_DIR` and disk.
+- `Dockerfile` — one image for all apps.
+- `liara.json` — the `bstage` app: port 8080, one disk per hosted app, health
+  check runs `launcher.mjs health`.
+- `deploy.lock.json` — the version of each app that goes into the image.
 
-1. starts from either a `repository_dispatch` (`content-creator-release`) or a manual run
-2. downloads `content-creator-<version>.tar.gz`, `.sha256` and `.manifest.json`
-3. verifies the checksum file, then cross-checks it against the manifest
-4. extracts the build and confirms the runtime is present
-5. starts the app and calls `/api/health`
+Deploying anything rebuilds the whole image and restarts every app. Accepted for
+staging.
 
-It stops there. Nothing is deployed yet.
+## Adding an app
 
-## Enabling the automatic trigger
+1. `apps/<name>/app.json`:
+   ```json
+   { "source_repo": "owner/repo", "artifact": "name-*",
+     "route": "/name", "port": 3002, "data_dir": "/data/name",
+     "disk": "name", "entry": "server.js", "health": "/api/health" }
+   ```
+2. Add its disk to `liara.json` (`{ "name": "name", "mountTo": "/data/name" }`).
+3. In that app's repo, dispatch `app-release` with `{app, version}` after a
+   release, using a fine-grained PAT with `Contents: read and write` on this repo.
 
-In `bonshad2026/content-creator`, add a secret named `DEVOPS_DISPATCH_TOKEN`:
+The image only contains what the lock file pins — a new app needs one entry in
+`deploy.lock.json` to start being built in.
 
-- a **fine-grained** personal access token
-- `Contents: read and write`, scoped to this `devops-stage` repo only
+## Triggering
 
-Until that secret exists, the app repo's `Notify dev-ops` step prints a skip
-message and exits cleanly.
-
-## Not done yet
-
-Deploying. content-creator has no staging slot until it is decided whether it
-runs as a fifth process inside the `tibasoft` container or as its own Liara app
-— the memory headroom of the current Earth plan is unproven.
+- automatic: `repository_dispatch`, event `app-release`, payload `{app, version}`
+- manual: Actions → deploy → Run workflow → app + version

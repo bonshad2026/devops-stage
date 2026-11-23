@@ -1,0 +1,110 @@
+// Gateway + process supervisor for the bstage container.
+//
+// Every directory under apps/ with an app.json becomes a child process on its
+// own port, with its own BASE_URL, DATA_DIR and disk. The gateway strips the
+// route prefix and forwards to that child.
+//
+//   node launcher.mjs          start everything and listen on 8080
+//   node launcher.mjs health   exit 0 only if every child answers its health path
+
+import { spawn } from 'node:child_process';
+import { readdir, readFile } from 'node:fs/promises';
+import http from 'node:http';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT || 8080);
+
+async function loadApps() {
+  const apps = [];
+  for (const name of await readdir(join(ROOT, 'apps'))) {
+    try {
+      const cfg = JSON.parse(await readFile(join(ROOT, 'apps', name, 'app.json'), 'utf8'));
+      apps.push({ name, ...cfg, dir: join(ROOT, 'apps', name, 'app') });
+    } catch {
+      // no app.json here: not an app
+    }
+  }
+  return apps.sort((a, b) => a.port - b.port);
+}
+
+function start(app) {
+  const child = spawn(process.execPath, [app.entry || 'server.js'], {
+    cwd: app.dir,
+    env: {
+      ...process.env,
+      PORT: String(app.port),
+      BASE_URL: app.route,
+      DATA_DIR: app.data_dir,
+      NODE_ENV: 'production',
+    },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  child.on('exit', (code, signal) => {
+    console.error(`[${app.name}] exited (${code ?? signal}); restarting in 2s`);
+    setTimeout(() => start(app), 2000);
+  });
+  return child;
+}
+
+async function isUp(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+const apps = await loadApps();
+if (!apps.length) {
+  console.error('no apps found under apps/');
+  process.exit(1);
+}
+
+if (process.argv[2] === 'health') {
+  const results = await Promise.all(
+    apps.map(async (app) => ({
+      app: app.name,
+      up: await isUp(`http://127.0.0.1:${app.port}${app.health || '/'}`),
+    })),
+  );
+  console.log(JSON.stringify(results));
+  process.exit(results.every((r) => r.up) ? 0 : 1);
+}
+
+for (const app of apps) start(app);
+
+http
+  .createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    const app = apps
+      .filter((a) => url.pathname === a.route || url.pathname.startsWith(`${a.route}/`))
+      .sort((a, b) => b.route.length - a.route.length)[0];
+
+    if (!app) {
+      res.writeHead(404, { 'content-type': 'text/plain' }).end('no app at this path');
+      return;
+    }
+
+    const upstream = http.request(
+      {
+        host: '127.0.0.1',
+        port: app.port,
+        path: (url.pathname.slice(app.route.length) || '/') + url.search,
+        method: req.method,
+        headers: req.headers,
+      },
+      (answer) => {
+        res.writeHead(answer.statusCode, answer.headers);
+        answer.pipe(res);
+      },
+    );
+
+    upstream.on('error', () => res.writeHead(502, { 'content-type': 'text/plain' }).end('upstream down'));
+    req.pipe(upstream);
+  })
+  .listen(PORT, () => {
+    console.log(`gateway on ${PORT}: ` + apps.map((a) => `${a.route || '/'} -> ${a.name}:${a.port}`).join(', '));
+  });

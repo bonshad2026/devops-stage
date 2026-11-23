@@ -1,4 +1,10 @@
 {
   "source_repo": "bonshad2026/content-creator",
-  "artifact": "content-creator-*"
+  "artifact": "content-creator-*",
+  "route": "/creator",
+  "port": 3001,
+  "data_dir": "/data/creator",
+  "disk": "creator",
+  "entry": "server.js",
+  "health": "/api/health"
 }
